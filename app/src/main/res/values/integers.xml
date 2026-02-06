@@ -1,0 +1,3 @@
+<resources>
+  <integer name="analysis_target_ms">100</integer>
+</resources>
