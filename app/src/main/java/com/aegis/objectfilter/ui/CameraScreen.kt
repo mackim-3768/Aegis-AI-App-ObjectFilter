@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aegis.objectfilter.ui.overlay.WarningBanner
+import com.aegis.objectfilter.ui.overlay.DriverWarningBanner
 
 @Composable
 fun CameraScreen(viewModel: CameraViewModel = viewModel()) {
@@ -36,6 +37,7 @@ fun CameraScreen(viewModel: CameraViewModel = viewModel()) {
     )
 
     WarningBanner(uiState = uiState)
+    DriverWarningBanner(uiState = uiState)
   }
 }
 

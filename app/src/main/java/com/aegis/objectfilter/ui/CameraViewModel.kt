@@ -8,10 +8,14 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
-import com.aegis.objectfilter.core.analyzer.CognitiveAnalyzer
+import com.aegis.objectfilter.core.analyzer.HybridAnalyzer
+import com.aegis.objectfilter.core.driverreadiness.DriverReadinessEngine
+import com.aegis.objectfilter.core.driverreadiness.DriverReadinessState
 import com.aegis.objectfilter.core.filter.CognitiveFilter
 import com.aegis.objectfilter.core.filter.FilteredSummary
+import com.aegis.objectfilter.core.ml.LiteRtFaceLandmarker
 import com.aegis.objectfilter.core.ml.LiteRtObjectDetector
+import com.aegis.objectfilter.core.warning.ImmediateWarningDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -27,7 +31,15 @@ class CameraViewModel : ViewModel() {
     modelAssetPath = "efficientdet-lite0.tflite",
   )
 
+  private val faceLandmarker = LiteRtFaceLandmarker(
+    modelAssetPath = "face_landmarker.task",
+  )
+
   private val cognitiveFilter = CognitiveFilter()
+
+  private val driverEngine = DriverReadinessEngine()
+
+  private val warningDispatcher = ImmediateWarningDispatcher()
 
   private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
@@ -48,17 +60,26 @@ class CameraViewModel : ViewModel() {
         analysisExecutor.execute {
           try {
             detector.init(context)
+            faceLandmarker.init(context)
             _uiState.update { it.copy(error = null) }
           } catch (t: Throwable) {
-            _uiState.update { it.copy(error = t.message ?: "Detector init failed") }
+            val hint = "Ensure face_landmarker.task is placed in app/src/main/assets"
+            val msg = t.message ?: "Model init failed"
+            _uiState.update { it.copy(error = "$msg\n$hint") }
           }
         }
 
-        val analyzer = CognitiveAnalyzer(
+        val analyzer = HybridAnalyzer(
           detector = detector,
+          faceLandmarker = faceLandmarker,
           cognitiveFilter = cognitiveFilter,
+          driverEngine = driverEngine,
           onSummary = { summary ->
             _uiState.update { it.copy(lastSummary = summary) }
+          },
+          onDriverState = { driverState ->
+            _uiState.update { it.copy(driverState = driverState) }
+            warningDispatcher.dispatch(context, driverState)
           },
         )
 
@@ -67,7 +88,7 @@ class CameraViewModel : ViewModel() {
         cameraProvider.unbindAll()
         cameraProvider.bindToLifecycle(
           lifecycleOwner,
-          androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA,
+          androidx.camera.core.CameraSelector.DEFAULT_FRONT_CAMERA,
           preview,
           analysis,
         )
@@ -79,11 +100,14 @@ class CameraViewModel : ViewModel() {
   override fun onCleared() {
     super.onCleared()
     detector.close()
+    faceLandmarker.close()
+    warningDispatcher.close()
     analysisExecutor.shutdown()
   }
 }
 
 data class CameraUiState(
   val lastSummary: FilteredSummary? = null,
+  val driverState: DriverReadinessState? = null,
   val error: String? = null,
 )
